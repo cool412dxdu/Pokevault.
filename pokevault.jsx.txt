@@ -1,0 +1,1381 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+
+/* ══════════════════════════════ GLOBAL STYLES ══════════════════════════════ */
+const STYLES = `
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Nunito:wght@400;600;700;800;900&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #07071a; --bg2: #0d0d28; --card: #12122e; --card2: #1a1a3a;
+    --gold: #FFD700; --gold2: #FFA000; --red: #CC0000; --red2: #FF1744;
+    --blue: #1565C0; --text: #E8E8F4; --muted: #6060a0;
+    --border: #222244; --success: #00E676; --danger: #FF1744;
+    --sidebar: 220px;
+  }
+  html, body, #root { height: 100%; }
+  body { background: var(--bg); color: var(--text); font-family: 'Nunito', sans-serif; overflow-x: hidden; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: #333360; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+
+  .pixel { font-family: 'Press Start 2P', monospace; }
+
+  /* Layout */
+  .app-shell { display: flex; height: 100vh; overflow: hidden; }
+  .sidebar {
+    width: var(--sidebar); min-width: var(--sidebar); background: var(--bg2);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    padding: 0; overflow: hidden; z-index: 10;
+  }
+  .sidebar-logo {
+    padding: 20px 16px 16px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(255,215,0,0.05), transparent);
+  }
+  .sidebar-nav { flex: 1; overflow-y: auto; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+  .sidebar-footer { padding: 12px 8px; border-top: 1px solid var(--border); }
+  .main-content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+  .page-header {
+    padding: 24px 28px 0; position: sticky; top: 0; z-index: 5;
+    background: linear-gradient(180deg, var(--bg) 70%, transparent);
+    padding-bottom: 8px;
+  }
+  .page-body { padding: 16px 28px 32px; flex: 1; }
+
+  /* Nav item */
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px;
+    transition: all 0.15s; color: var(--muted); border: none; background: none;
+    width: 100%; text-align: left; border-left: 3px solid transparent;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .nav-item.active { background: rgba(255,215,0,0.08); color: var(--gold); border-left-color: var(--gold); }
+  .nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+
+  /* Pokéball Loader */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+  @keyframes glowPulse { 0%,100%{box-shadow:0 0 10px rgba(255,215,0,0.3)} 50%{box-shadow:0 0 25px rgba(255,215,0,0.7)} }
+  @keyframes holoShift { 0%{filter:hue-rotate(0deg)} 100%{filter:hue-rotate(360deg)} }
+  @keyframes float { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-6px)} }
+  .spin { animation: spin 0.8s linear infinite; }
+  .animate-in { animation: fadeUp 0.35s ease both; }
+  .pokeball-loader { 
+    width: 40px; height: 40px; border-radius: 50%; position: relative;
+    border: 4px solid transparent; border-top-color: var(--red); border-bottom-color: var(--text);
+    animation: spin 0.9s ease-in-out infinite;
+  }
+
+  /* Cards */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .poke-card {
+    border-radius: 14px; overflow: hidden; cursor: pointer; position: relative;
+    background: var(--card); border: 1px solid var(--border);
+    transition: transform 0.25s cubic-bezier(.34,1.56,.64,1), box-shadow 0.25s ease;
+    --cx: 50%; --cy: 50%;
+  }
+  .poke-card:hover {
+    transform: translateY(-8px) scale(1.03);
+    box-shadow: 0 20px 60px -10px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,215,0,0.25), 0 0 30px rgba(255,215,0,0.1);
+  }
+  .poke-card-shine {
+    position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: 14px;
+    background: radial-gradient(circle at var(--cx) var(--cy), rgba(255,255,255,0.12) 0%, transparent 60%);
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .poke-card:hover .poke-card-shine { opacity: 1; }
+  .poke-card-holo .poke-card-shine {
+    background: 
+      radial-gradient(circle at var(--cx) var(--cy), rgba(255,255,255,0.15) 0%, transparent 50%),
+      linear-gradient(125deg, rgba(255,0,100,0.05) 0%, rgba(255,200,0,0.05) 25%, rgba(0,255,150,0.05) 50%, rgba(0,100,255,0.05) 75%, rgba(200,0,255,0.05) 100%);
+    opacity: 0;
+  }
+  .poke-card:hover.poke-card-holo .poke-card-shine { opacity: 1; animation: holoShift 3s linear infinite; }
+  .poke-card-img { width: 100%; aspect-ratio: 3/4.2; object-fit: cover; display: block; }
+  .poke-card-img-placeholder {
+    width: 100%; aspect-ratio: 3/4.2; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--card2) 0%, #0a0a20 100%); font-size: 36px;
+  }
+  .poke-card-body { padding: 8px 10px 10px; }
+  .poke-card-name { font-size: 11px; font-weight: 800; color: var(--text); margin-bottom: 4px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .poke-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 4px; flex-wrap: wrap; }
+
+  /* Type badge */
+  .type-badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  /* Inputs / Buttons */
+  .poke-input {
+    background: var(--bg2); border: 2px solid var(--border); border-radius: 10px;
+    color: var(--text); padding: 10px 14px; width: 100%;
+    font-family: 'Nunito', sans-serif; font-size: 14px; font-weight: 600;
+    transition: border-color 0.2s, box-shadow 0.2s; outline: none;
+  }
+  .poke-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,215,0,0.12); }
+  .poke-input::placeholder { color: var(--muted); }
+  select.poke-input option { background: var(--bg2); }
+  .poke-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 10px 20px; border-radius: 10px; font-family: 'Nunito', sans-serif;
+    font-weight: 800; font-size: 13px; cursor: pointer; border: none;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .poke-btn:active { transform: scale(0.96); }
+  .poke-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-gold { background: linear-gradient(135deg, #FFD700, #FFA000); color: #000; }
+  .btn-gold:hover:not(:disabled) { background: linear-gradient(135deg, #FFE040, #FFB300); box-shadow: 0 4px 20px rgba(255,215,0,0.35); }
+  .btn-red { background: var(--red2); color: #fff; }
+  .btn-red:hover:not(:disabled) { background: #ff3333; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 2px solid var(--border); }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); background: rgba(255,215,0,0.05); }
+  .btn-success { background: var(--success); color: #000; }
+  .btn-success:hover:not(:disabled) { background: #00c853; }
+  .btn-sm { padding: 6px 12px; font-size: 11px; border-radius: 7px; }
+  .btn-icon { padding: 7px; border-radius: 8px; }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    z-index: 200; display: flex; align-items: center; justify-content: center;
+    padding: 20px; backdrop-filter: blur(6px); animation: fadeUp 0.2s ease;
+  }
+  .modal-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+    max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto;
+    animation: fadeUp 0.25s ease; box-shadow: 0 40px 80px rgba(0,0,0,0.8);
+  }
+  .modal-header { padding: 22px 24px 0; display: flex; align-items: center; justify-content: space-between; }
+  .modal-body { padding: 20px 24px 24px; }
+
+  /* Auth */
+  .auth-bg {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 30% 40%, rgba(204,0,0,0.12) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 60%, rgba(255,215,0,0.08) 0%, transparent 50%),
+                var(--bg);
+    padding: 20px;
+  }
+  .auth-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 24px;
+    padding: 40px; max-width: 420px; width: 100%;
+    box-shadow: 0 40px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,215,0,0.05);
+    animation: fadeUp 0.4s ease;
+  }
+  .auth-pokeball {
+    width: 70px; height: 70px; border-radius: 50%; position: relative; margin: 0 auto 24px;
+    background: linear-gradient(180deg, var(--red) 50%, #fff 50%);
+    border: 4px solid #333; animation: float 3s ease-in-out infinite;
+    box-shadow: 0 0 30px rgba(204,0,0,0.4), 0 10px 30px rgba(0,0,0,0.4);
+  }
+  .auth-pokeball::before {
+    content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 22px; height: 22px; background: white; border-radius: 50%;
+    border: 3px solid #333; z-index: 2;
+    box-shadow: 0 0 0 4px #333;
+  }
+  .auth-pokeball::after {
+    content: ''; position: absolute; top: calc(50% - 2px); left: 0; right: 0;
+    height: 4px; background: #333; z-index: 1;
+  }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; background: var(--bg2); padding: 4px; border-radius: 10px; }
+  .tab-btn {
+    flex: 1; padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer;
+    font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 12px;
+    transition: all 0.15s; color: var(--muted); background: transparent;
+  }
+  .tab-btn.active { background: var(--card); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+  .tab-btn:hover:not(.active) { color: var(--text); }
+
+  /* Stats */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px; position: relative; overflow: hidden;
+  }
+  .stat-card::before {
+    content: attr(data-icon); position: absolute; right: 12px; top: 12px;
+    font-size: 28px; opacity: 0.15;
+  }
+  .stat-value { font-size: 26px; font-weight: 900; color: var(--gold); line-height: 1; }
+  .stat-label { font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Table */
+  .poke-table { width: 100%; border-collapse: collapse; }
+  .poke-table th { padding: 10px 14px; text-align: left; font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; border-bottom: 1px solid var(--border); }
+  .poke-table td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 13px; vertical-align: middle; }
+  .poke-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .poke-table tr:last-child td { border-bottom: none; }
+
+  /* Condition badge */
+  .cond-NM { color: var(--success); } .cond-LP { color: #69F0AE; }
+  .cond-MP { color: var(--gold); } .cond-HP { color: #FF9800; } .cond-DMG { color: var(--danger); }
+
+  /* Toast */
+  .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 500; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    background: var(--card2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 16px; font-size: 13px; font-weight: 700; min-width: 240px;
+    display: flex; align-items: center; gap: 10px; animation: fadeUp 0.3s ease;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .toast-success { border-color: var(--success); }
+  .toast-error { border-color: var(--danger); }
+  .toast-info { border-color: var(--gold); }
+
+  /* Value chart */
+  .mini-chart { height: 80px; position: relative; overflow: hidden; }
+  .chart-bar {
+    position: absolute; bottom: 0; background: linear-gradient(180deg, var(--gold), rgba(255,215,0,0.3));
+    border-radius: 3px 3px 0 0; transition: height 0.5s ease; min-width: 4px;
+  }
+
+  /* Filter row */
+  .filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+  /* Card detail modal */
+  .card-detail-img { width: 100%; max-width: 260px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); margin: 0 auto; display: block; }
+  
+  /* Deck card */
+  .deck-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px; cursor: pointer; transition: all 0.15s;
+  }
+  .deck-card:hover { border-color: var(--gold); background: rgba(255,215,0,0.04); }
+
+  /* Progress bar */
+  .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold2)); border-radius: 3px; transition: width 0.4s ease; }
+
+  /* Rarity colors */
+  .rarity-Common { color: #aaa; } .rarity-Uncommon { color: #78C850; }
+  .rarity-Rare { color: #6890F0; } .rarity-Rare\\ Holo { color: #FFD700; }
+  .rarity-Rare\\ Ultra { color: #FF69B4; } .rarity-Rare\\ Secret { color: #FF4500; }
+  
+  /* Foil badge */
+  .foil-badge { 
+    background: linear-gradient(135deg, #ff6b6b, #ffd700, #00ff88, #4fc3f7, #c084fc);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    font-weight: 900; font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
+  }
+
+  /* Empty state */
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty-state-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-state-title { font-size: 15px; font-weight: 800; margin-bottom: 8px; color: var(--text); }
+  .empty-state-sub { font-size: 13px; }
+
+  /* Section title */
+  .section-title { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+
+  /* Search bar */
+  .search-wrap { position: relative; }
+  .search-wrap .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; pointer-events: none; }
+  .search-wrap .poke-input { padding-left: 36px; }
+
+  /* Collection item row hover */
+  .collection-row:hover { background: rgba(255,215,0,0.03) !important; }
+
+  @media (max-width: 768px) {
+    :root { --sidebar: 60px; }
+    .nav-item span { display: none; }
+    .sidebar-logo .logo-text { display: none; }
+    .page-body { padding: 12px 16px 24px; }
+    .card-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  }
+`;
+
+/* ══════════════════════════════ TYPE COLORS ══════════════════════════════ */
+const TYPE_COLORS = {
+  Fire:"#FF6B35",Water:"#4FC3F7",Grass:"#66BB6A",Electric:"#FFEB3B",
+  Psychic:"#EC407A",Ice:"#80DEEA",Dragon:"#7E57C2",Dark:"#78909C",
+  Fairy:"#F48FB1",Fighting:"#EF5350",Poison:"#AB47BC",Ground:"#FFCA28",
+  Flying:"#90CAF9",Bug:"#AED581",Rock:"#BCAAA4",Ghost:"#7986CB",
+  Steel:"#B0BEC5",Normal:"#BDBDBD",Colorless:"#BDBDBD",Metal:"#90A4AE",
+};
+const RARITY_ORDER = ["Common","Uncommon","Rare","Rare Holo","Rare Ultra","Rare Secret","Amazing Rare","Promo"];
+
+/* ══════════════════════════════ UTILITIES ══════════════════════════════ */
+function fmtPrice(v){ return v!=null ? `$${Number(v).toFixed(2)}` : "—"; }
+function fmtDate(s){ try{ return new Date(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }catch{ return s; } }
+function getMarketPrice(card){
+  const p = card?.tcgplayer?.prices;
+  if(!p) return 0;
+  const keys = ["holofoil","reverseHolofoil","normal","1stEditionHolofoil","unlimitedHolofoil"];
+  for(const k of keys){ if(p[k]?.market) return p[k].market; }
+  return 0;
+}
+function getRarityColor(rarity){
+  if(!rarity) return "#aaa";
+  if(rarity.includes("Secret")) return "#FF4500";
+  if(rarity.includes("Ultra")) return "#FF69B4";
+  if(rarity.includes("Holo") || rarity.includes("holo")) return "#FFD700";
+  if(rarity === "Rare") return "#6890F0";
+  if(rarity === "Uncommon") return "#78C850";
+  return "#aaa";
+}
+
+/* ══════════════════════════════ TOAST ══════════════════════════════ */
+function ToastContainer({ toasts }){
+  return (
+    <div className="toast-container">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast toast-${t.type}`}>
+          <span>{t.type==="success"?"✓":t.type==="error"?"✕":"ℹ"}</span>
+          <span>{t.msg}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function useToast(){
+  const [toasts, setToasts] = useState([]);
+  const add = useCallback((msg, type="info") => {
+    const id = Date.now();
+    setToasts(p => [...p.slice(-4), {id, msg, type}]);
+    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3000);
+  }, []);
+  return { toasts, toast: add };
+}
+
+/* ══════════════════════════════ API HOOK ══════════════════════════════ */
+function useApi(base, token){
+  const h = () => ({
+    "Content-Type":"application/json",
+    ...(token ? {Authorization:`Bearer ${token}`} : {}),
+  });
+  const req = async (method, path, body) => {
+    const r = await fetch(`${base}${path}`, {
+      method, headers: h(),
+      ...(body !== undefined ? {body: JSON.stringify(body)} : {}),
+    });
+    if(!r.ok){ const e = await r.json().catch(()=>{}); throw new Error(e?.detail || r.statusText); }
+    return r.json();
+  };
+  return {
+    get: p => req("GET", p),
+    post: (p,b) => req("POST", p, b),
+    patch: (p,b) => req("PATCH", p, b),
+    del: p => req("DELETE", p),
+  };
+}
+
+/* ══════════════════════════════ CARD COMPONENT ══════════════════════════════ */
+function PokeCard({ card, onClick, badge, showPrice = true }){
+  const ref = useRef(null);
+  const isHolo = card.rarity && (card.rarity.includes("Holo") || card.rarity.includes("Ultra") || card.rarity.includes("Secret"));
+  const price = getMarketPrice(card);
+  const types = card.types || (card.supertype === "Energy" ? ["Energy"] : []);
+
+  const onMove = e => {
+    const rect = ref.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(1);
+    const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(1);
+    ref.current.style.setProperty("--cx", `${x}%`);
+    ref.current.style.setProperty("--cy", `${y}%`);
+  };
+  const onLeave = () => {
+    ref.current.style.setProperty("--cx","50%");
+    ref.current.style.setProperty("--cy","50%");
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={`poke-card ${isHolo ? "poke-card-holo" : ""} animate-in`}
+      onClick={() => onClick && onClick(card)}
+      onMouseMove={onMove}
+      onMouseLeave={onLeave}
+    >
+      <div className="poke-card-shine" />
+      {badge && (
+        <div style={{position:"absolute",top:6,right:6,zIndex:5,background:"rgba(0,0,0,0.75)",borderRadius:20,padding:"2px 7px",fontSize:10,fontWeight:800,color:"#fff"}}>{badge}</div>
+      )}
+      {card.images?.small
+        ? <img src={card.images.small} alt={card.name} className="poke-card-img" loading="lazy" />
+        : <div className="poke-card-img-placeholder">🃏</div>
+      }
+      <div className="poke-card-body">
+        <div className="poke-card-name">{card.name || "Unknown"}</div>
+        <div className="poke-card-meta">
+          <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+            {types.slice(0,2).map(t => (
+              <span key={t} className="type-badge" style={{background: `${TYPE_COLORS[t] || "#888"}22`, color: TYPE_COLORS[t] || "#888", border:`1px solid ${TYPE_COLORS[t] || "#888"}44`}}>{t}</span>
+            ))}
+          </div>
+          {showPrice && price > 0 && <span style={{fontSize:10,fontWeight:800,color:"var(--gold)"}}>{fmtPrice(price)}</span>}
+        </div>
+        {card.rarity && (
+          <div style={{marginTop:4,fontSize:9,fontWeight:700,color:getRarityColor(card.rarity)}}>{card.rarity}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ CARD DETAIL MODAL ══════════════════════════════ */
+function CardDetailModal({ card, onClose, onAddCollection, onAddWishlist, onAddTrade, inCollection }){
+  const [qty, setQty] = useState(1);
+  const [cond, setCond] = useState("NM");
+  const [foil, setFoil] = useState(false);
+  const [holo, setHolo] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [tab, setTab] = useState("add");
+
+  if(!card) return null;
+  const price = getMarketPrice(card);
+
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal-box" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <span style={{fontWeight:900,fontSize:16}}>{card.name}</span>
+          <button className="poke-btn btn-ghost btn-icon" onClick={onClose} style={{fontSize:18,lineHeight:1}}>×</button>
+        </div>
+        <div className="modal-body">
+          <div style={{display:"flex",gap:20,marginBottom:20}}>
+            <div style={{flexShrink:0}}>
+              {card.images?.large
+                ? <img src={card.images.large} alt={card.name} style={{width:160,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.6)"}} />
+                : <div style={{width:160,height:220,background:"var(--card2)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:48}}>🃏</div>
+              }
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,color:"var(--muted)",fontWeight:700,marginBottom:8}}>
+                {(card.set?.name||"")} {card.number && `· #${card.number}`}
+              </div>
+              {card.rarity && (
+                <div className="type-badge" style={{background:`${getRarityColor(card.rarity)}22`,color:getRarityColor(card.rarity),border:`1px solid ${getRarityColor(card.rarity)}44`,marginBottom:8}}>
+                  {card.rarity}
+                </div>
+              )}
+              {card.types && (
+                <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
+                  {card.types.map(t=>(
+                    <span key={t} className="type-badge" style={{background:`${TYPE_COLORS[t]||"#888"}22`,color:TYPE_COLORS[t]||"#888",border:`1px solid ${TYPE_COLORS[t]||"#888"}44`}}>{t}</span>
+                  ))}
+                </div>
+              )}
+              {price > 0 && (
+                <div style={{background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+                  <div style={{fontSize:9,color:"var(--muted)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.6px"}}>Market Price</div>
+                  <div style={{fontSize:22,fontWeight:900,color:"var(--gold)"}}>{fmtPrice(price)}</div>
+                </div>
+              )}
+              {card.hp && <div style={{fontSize:12,color:"var(--muted)",fontWeight:700}}>HP: <span style={{color:"var(--text)"}}>{card.hp}</span></div>}
+              {card.artist && <div style={{fontSize:11,color:"var(--muted)",marginTop:4}}>Artist: {card.artist}</div>}
+            </div>
+          </div>
+
+          {onAddCollection && (
+            <>
+              <div className="tabs" style={{marginBottom:14}}>
+                {["add","wishlist","trade"].map(t=>(
+                  <button key={t} className={`tab-btn${tab===t?" active":""}`} onClick={()=>setTab(t)}>
+                    {t==="add"?"+ Collection":t==="wishlist"?"♡ Wishlist":"⇄ Trade"}
+                  </button>
+                ))}
+              </div>
+
+              {tab === "add" && (
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    <div>
+                      <label style={{fontSize:11,fontWeight:800,color:"var(--muted)",display:"block",marginBottom:4}}>QTY</label>
+                      <input type="number" min={1} max={99} value={qty} onChange={e=>setQty(+e.target.value)} className="poke-input" />
+                    </div>
+                    <div>
+                      <label style={{fontSize:11,fontWeight:800,color:"var(--muted)",display:"block",marginBottom:4}}>CONDITION</label>
+                      <select value={cond} onChange={e=>setCond(e.target.value)} className="poke-input">
+                        {["NM","LP","MP","HP","DMG"].map(c=><option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:16}}>
+                    <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:13,fontWeight:700}}>
+                      <input type="checkbox" checked={foil} onChange={e=>setFoil(e.target.checked)} style={{accentColor:"var(--gold)"}} /> Foil
+                    </label>
+                    <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:13,fontWeight:700}}>
+                      <input type="checkbox" checked={holo} onChange={e=>setHolo(e.target.checked)} style={{accentColor:"var(--gold)"}} /> Holo
+                    </label>
+                  </div>
+                  <input placeholder="Notes (optional)" value={notes} onChange={e=>setNotes(e.target.value)} className="poke-input" />
+                  <button className="poke-btn btn-gold" style={{width:"100%"}} onClick={()=>onAddCollection({card_id:card.id,quantity:qty,condition:cond,is_foil:foil,is_holo:holo,notes})}>
+                    ✚ Add to Collection
+                  </button>
+                </div>
+              )}
+              {tab === "wishlist" && (
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  <div>
+                    <label style={{fontSize:11,fontWeight:800,color:"var(--muted)",display:"block",marginBottom:4}}>PRIORITY (1-5)</label>
+                    <input type="number" min={1} max={5} defaultValue={3} id="wl-prio" className="poke-input" />
+                  </div>
+                  <input placeholder="Notes (optional)" id="wl-notes" className="poke-input" />
+                  <button className="poke-btn btn-gold" style={{width:"100%"}} onClick={()=>onAddWishlist({card_id:card.id,priority:+document.getElementById("wl-prio").value,notes:document.getElementById("wl-notes").value})}>
+                    ♡ Add to Wishlist
+                  </button>
+                </div>
+              )}
+              {tab === "trade" && (
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    <div>
+                      <label style={{fontSize:11,fontWeight:800,color:"var(--muted)",display:"block",marginBottom:4}}>QTY</label>
+                      <input type="number" min={1} max={99} defaultValue={1} id="tr-qty" className="poke-input" />
+                    </div>
+                    <div>
+                      <label style={{fontSize:11,fontWeight:800,color:"var(--muted)",display:"block",marginBottom:4}}>CONDITION</label>
+                      <select id="tr-cond" className="poke-input">
+                        {["NM","LP","MP","HP","DMG"].map(c=><option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,fontWeight:800,color:"var(--muted)",display:"block",marginBottom:4}}>ASKING PRICE ($)</label>
+                    <input type="number" step="0.01" defaultValue={price||""} placeholder="0.00" id="tr-price" className="poke-input" />
+                  </div>
+                  <button className="poke-btn btn-gold" style={{width:"100%"}} onClick={()=>onAddTrade({card_id:card.id,quantity:+document.getElementById("tr-qty").value,condition:document.getElementById("tr-cond").value,asking_price:+document.getElementById("tr-price").value||null})}>
+                    ⇄ List for Trade
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ BROWSE PAGE ══════════════════════════════ */
+function BrowsePage({ api, toast }){
+  const [cards, setCards] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [q, setQ] = useState("");
+  const [rarity, setRarity] = useState("");
+  const [supertype, setSupertype] = useState("");
+  const [type, setType] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const PAGE_SIZE = 24;
+
+  const load = useCallback(async (pg=1, qv=q, rv=rarity, stv=supertype, tv=type) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({page:pg, page_size:PAGE_SIZE});
+      if(qv) params.set("q",qv);
+      if(rv) params.set("rarity",rv);
+      if(stv) params.set("supertype",stv);
+      if(tv) params.set("type",tv);
+      const res = await api.get(`/cards?${params}`);
+      setCards(res.data || []);
+      setTotal(res.totalCount || 0);
+      setPage(pg);
+    } catch(e){ toast(e.message,"error"); }
+    setLoading(false);
+  }, [api, q, rarity, supertype, type, toast]);
+
+  useEffect(()=>{ load(1,q,rarity,supertype,type); }, []);
+
+  const handleSearch = e => { e.preventDefault(); load(1,q,rarity,supertype,type); };
+
+  const handleAdd = async (data) => {
+    try { await api.post("/collection", data); toast("Added to collection! ✓","success"); setSelected(null); }
+    catch(e){ toast(e.message,"error"); }
+  };
+  const handleWishlist = async (data) => {
+    try { await api.post("/wishlist", data); toast("Added to wishlist! ♡","success"); setSelected(null); }
+    catch(e){ toast(e.message,"error"); }
+  };
+  const handleTrade = async (data) => {
+    try { await api.post("/trades", data); toast("Listed for trade! ⇄","success"); setSelected(null); }
+    catch(e){ toast(e.message,"error"); }
+  };
+
+  const pages = Math.ceil(total / PAGE_SIZE);
+
+  return (
+    <div>
+      <div className="page-header">
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div>
+            <h1 className="pixel" style={{fontSize:14,color:"var(--gold)",marginBottom:4}}>Card Dex</h1>
+            <div style={{fontSize:12,color:"var(--muted)",fontWeight:700}}>{total.toLocaleString()} cards available</div>
+          </div>
+        </div>
+        <form onSubmit={handleSearch}>
+          <div className="filter-row" style={{marginBottom:8}}>
+            <div className="search-wrap" style={{flex:1,minWidth:200}}>
+              <span className="search-icon">🔍</span>
+              <input value={q} onChange={e=>setQ(e.target.value)} className="poke-input" placeholder="Search Pokémon cards..." />
+            </div>
+            <select value={supertype} onChange={e=>{setSupertype(e.target.value);}} className="poke-input" style={{width:"auto",minWidth:110}}>
+              <option value="">All Types</option>
+              {["Pokémon","Trainer","Energy"].map(s=><option key={s}>{s}</option>)}
+            </select>
+            <select value={rarity} onChange={e=>setRarity(e.target.value)} className="poke-input" style={{width:"auto",minWidth:130}}>
+              <option value="">All Rarities</option>
+              {["Common","Uncommon","Rare","Rare Holo","Rare Ultra","Rare Secret","Amazing Rare","Promo"].map(r=><option key={r}>{r}</option>)}
+            </select>
+            <select value={type} onChange={e=>setType(e.target.value)} className="poke-input" style={{width:"auto",minWidth:110}}>
+              <option value="">All Elements</option>
+              {Object.keys(TYPE_COLORS).map(t=><option key={t}>{t}</option>)}
+            </select>
+            <button type="submit" className="poke-btn btn-gold">Search</button>
+          </div>
+        </form>
+      </div>
+
+      <div className="page-body">
+        {loading ? (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:80,gap:16}}>
+            <div className="pokeball-loader" /> <span style={{color:"var(--muted)",fontWeight:700}}>Loading cards…</span>
+          </div>
+        ) : cards.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">🃏</div>
+            <div className="empty-state-title">No Cards Found</div>
+            <div className="empty-state-sub">Try a different search or filter</div>
+          </div>
+        ) : (
+          <>
+            <div className="card-grid">
+              {cards.map(c => <PokeCard key={c.id} card={c} onClick={setSelected} />)}
+            </div>
+            {pages > 1 && (
+              <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:28,flexWrap:"wrap"}}>
+                <button className="poke-btn btn-ghost btn-sm" disabled={page<=1} onClick={()=>load(page-1)}>← Prev</button>
+                {Array.from({length:Math.min(pages,7)},(_,i)=>{
+                  const p = page <= 4 ? i+1 : i+page-3;
+                  if(p>pages) return null;
+                  return <button key={p} className={`poke-btn btn-sm ${p===page?"btn-gold":"btn-ghost"}`} onClick={()=>load(p)}>{p}</button>;
+                })}
+                <button className="poke-btn btn-ghost btn-sm" disabled={page>=pages} onClick={()=>load(page+1)}>Next →</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {selected && (
+        <CardDetailModal
+          card={selected} onClose={()=>setSelected(null)}
+          onAddCollection={handleAdd} onAddWishlist={handleWishlist} onAddTrade={handleTrade}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════ COLLECTION PAGE ══════════════════════════════ */
+function CollectionPage({ api, toast }){
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [cond, setCond] = useState("");
+  const [view, setView] = useState("grid");
+  const [selected, setSelected] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if(q) params.set("q",q);
+      if(cond) params.set("condition",cond);
+      const res = await api.get(`/collection?${params}`);
+      setItems(res);
+    } catch(e){ toast(e.message,"error"); }
+    setLoading(false);
+  }, [api, q, cond, toast]);
+
+  useEffect(()=>{ load(); }, []);
+
+  const handleDelete = async (itemId) => {
+    try { await api.del(`/collection/${itemId}`); toast("Removed from collection","info"); load(); }
+    catch(e){ toast(e.message,"error"); }
+  };
+
+  const totalValue = items.reduce((s,i)=>{
+    const p = getMarketPrice(i.card);
+    return s + p * (i.quantity||1) * (i.is_foil||i.is_holo ? 1.2 : 1);
+  }, 0);
+
+  return (
+    <div>
+      <div className="page-header">
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div>
+            <h1 className="pixel" style={{fontSize:14,color:"var(--gold)",marginBottom:4}}>My Vault</h1>
+            <div style={{fontSize:12,color:"var(--muted)",fontWeight:700}}>{items.length} unique · {fmtPrice(totalValue)} est. value</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button className={`poke-btn btn-sm ${view==="grid"?"btn-gold":"btn-ghost"}`} onClick={()=>setView("grid")}>⊞</button>
+            <button className={`poke-btn btn-sm ${view==="list"?"btn-gold":"btn-ghost"}`} onClick={()=>setView("list")}>☰</button>
+            <a href={`${api.base}/collection/export.csv`} download className="poke-btn btn-ghost btn-sm" style={{textDecoration:"none"}}>↓ CSV</a>
+          </div>
+        </div>
+        <div className="filter-row" style={{marginBottom:8}}>
+          <div className="search-wrap" style={{flex:1}}>
+            <span className="search-icon">🔍</span>
+            <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()} className="poke-input" placeholder="Search collection…" />
+          </div>
+          <select value={cond} onChange={e=>{setCond(e.target.value);}} className="poke-input" style={{width:"auto",minWidth:120}}>
+            <option value="">All Conditions</option>
+            {["NM","LP","MP","HP","DMG"].map(c=><option key={c}>{c}</option>)}
+          </select>
+          <button className="poke-btn btn-gold" onClick={load}>Filter</button>
+        </div>
+      </div>
+
+      <div className="page-body">
+        {loading ? (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:80,gap:16}}>
+            <div className="pokeball-loader" /> <span style={{color:"var(--muted)",fontWeight:700}}>Loading vault…</span>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">📦</div>
+            <div className="empty-state-title">Your vault is empty</div>
+            <div className="empty-state-sub">Browse the Card Dex and start adding cards!</div>
+          </div>
+        ) : view === "grid" ? (
+          <div className="card-grid">
+            {items.map(item => (
+              <div key={item.id} style={{position:"relative"}}>
+                <PokeCard card={item.card} onClick={()=>setSelected(item.card)} badge={item.quantity > 1 ? `×${item.quantity}` : undefined} />
+                <div style={{display:"flex",gap:4,marginTop:6}}>
+                  {(item.is_foil||item.is_holo) && <span className="foil-badge">✦ {item.is_foil?"Foil":"Holo"}</span>}
+                  <span className={`cond-${item.condition}`} style={{fontSize:10,fontWeight:800,marginLeft:"auto"}}>{item.condition}</span>
+                </div>
+                <button onClick={()=>handleDelete(item.id)} className="poke-btn btn-red btn-sm" style={{width:"100%",marginTop:4}}>Remove</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",overflow:"hidden"}}>
+            <table className="poke-table">
+              <thead>
+                <tr>
+                  <th>Card</th><th>Set</th><th>Rarity</th><th>Qty</th><th>Condition</th><th>Flags</th><th>Price</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(item => (
+                  <tr key={item.id} className="collection-row" style={{cursor:"pointer"}} onClick={()=>setSelected(item.card)}>
+                    <td>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        {item.card?.images?.small && <img src={item.card.images.small} alt="" style={{width:36,borderRadius:4}} />}
+                        <span style={{fontWeight:800,fontSize:13}}>{item.card?.name||item.card_id}</span>
+                      </div>
+                    </td>
+                    <td style={{color:"var(--muted)",fontSize:12}}>{item.card?.set?.name||"—"}</td>
+                    <td style={{fontSize:11,color:getRarityColor(item.card?.rarity)}}>{item.card?.rarity||"—"}</td>
+                    <td style={{fontWeight:800}}>{item.quantity||1}</td>
+                    <td><span className={`cond-${item.condition}`} style={{fontWeight:800}}>{item.condition||"NM"}</span></td>
+                    <td style={{fontSize:11}}>
+                      {item.is_foil && <span className="foil-badge">Foil </span>}
+                      {item.is_holo && <span className="foil-badge">Holo</span>}
+                    </td>
+                    <td style={{color:"var(--gold)",fontWeight:800}}>{fmtPrice(getMarketPrice(item.card))}</td>
+                    <td onClick={e=>e.stopPropagation()}>
+                      <button className="poke-btn btn-red btn-sm btn-icon" onClick={()=>handleDelete(item.id)}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {selected && <CardDetailModal card={selected} onClose={()=>setSelected(null)} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════ STATS PAGE ══════════════════════════════ */
+function StatsPage({ api, toast }){
+  const [stats, setStats] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    (async()=>{
+      setLoading(true);
+      try {
+        const [s,h] = await Promise.all([api.get("/collection/stats"), api.get("/collection/value-history?days=30")]);
+        setStats(s); setHistory(h);
+      } catch(e){ toast(e.message,"error"); }
+      setLoading(false);
+    })();
+  },[]);
+
+  if(loading) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:80,gap:16}}>
+      <div className="pokeball-loader"/><span style={{color:"var(--muted)",fontWeight:700}}>Loading stats…</span>
+    </div>
+  );
+
+  if(!stats) return <div className="empty-state"><div className="empty-state-icon">📊</div><div className="empty-state-title">No stats yet</div><div className="empty-state-sub">Add cards to your collection first!</div></div>;
+
+  const rarityEntries = Object.entries(stats.by_rarity||{}).sort((a,b)=>b[1]-a[1]);
+  const maxRarity = Math.max(...rarityEntries.map(e=>e[1]),1);
+
+  const maxVal = Math.max(...history.map(h=>h.total_value||0), 1);
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1 className="pixel" style={{fontSize:14,color:"var(--gold)",marginBottom:4}}>Vault Stats</h1>
+        <div style={{fontSize:12,color:"var(--muted)",fontWeight:700,marginBottom:12}}>Collection analytics & insights</div>
+      </div>
+      <div className="page-body">
+        <div className="stat-grid" style={{marginBottom:24}}>
+          {[
+            {label:"Total Cards",value:(stats.total_cards||0).toLocaleString(),icon:"🃏"},
+            {label:"Unique Cards",value:(stats.unique_cards||0).toLocaleString(),icon:"✨"},
+            {label:"Est. Value",value:fmtPrice(stats.total_value),icon:"💰"},
+            {label:"Sets Collected",value:`${stats.sets_collected||0} / ${stats.total_sets||"?"}`,icon:"📦"},
+          ].map(s=>(
+            <div key={s.label} className="stat-card animate-in" data-icon={s.icon}>
+              <div className="stat-value">{s.value}</div>
+              <div className="stat-label">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
+          <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:14,padding:20}}>
+            <div className="section-title">By Rarity</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {rarityEntries.map(([rarity,count])=>(
+                <div key={rarity}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:12}}>
+                    <span style={{color:getRarityColor(rarity),fontWeight:700}}>{rarity}</span>
+                    <span style={{fontWeight:800}}>{count}</span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{width:`${(count/maxRarity*100).toFixed(1)}%`,background:`linear-gradient(90deg,${getRarityColor(rarity)},${getRarityColor(rarity)}88)`}} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:14,padding:20}}>
+            <div className="section-title">Value History (30d)</div>
+            {history.length === 0 ? (
+              <div style={{textAlign:"center",color:"var(--muted)",padding:20,fontSize:12}}>No history yet — check back tomorrow!</div>
+            ) : (
+              <div>
+                <div style={{display:"flex",alignItems:"flex-end",gap:3,height:100,marginBottom:6}}>
+                  {history.map((h,i)=>(
+                    <div key={i} title={`${h.date}: ${fmtPrice(h.total_value)}`} className="chart-bar" style={{flex:1,height:`${((h.total_value||0)/maxVal*100).toFixed(1)}%`,minHeight:3}} />
+                  ))}
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--muted)"}}>
+                  <span>{history[0]?.date}</span>
+                  <span>{history[history.length-1]?.date}</span>
+                </div>
+                <div style={{marginTop:12,fontSize:12,color:"var(--muted)"}}>
+                  Current: <span style={{color:"var(--gold)",fontWeight:800}}>{fmtPrice(history[history.length-1]?.total_value)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ WISHLIST PAGE ══════════════════════════════ */
+function WishlistPage({ api, toast }){
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+
+  const load = useCallback(async()=>{
+    setLoading(true);
+    try { setItems(await api.get("/wishlist")); }
+    catch(e){ toast(e.message,"error"); }
+    setLoading(false);
+  },[api,toast]);
+
+  useEffect(()=>{ load(); },[]);
+
+  const remove = async id => {
+    try { await api.del(`/wishlist/${id}`); toast("Removed from wishlist","info"); load(); }
+    catch(e){ toast(e.message,"error"); }
+  };
+
+  const PRIO_COLOR = {1:"#FF4444",2:"#FF9800",3:"#FFD700",4:"#78C850",5:"#4FC3F7"};
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1 className="pixel" style={{fontSize:14,color:"var(--gold)",marginBottom:4}}>Wishlist</h1>
+        <div style={{fontSize:12,color:"var(--muted)",fontWeight:700,marginBottom:12}}>{items.length} cards wanted</div>
+      </div>
+      <div className="page-body">
+        {loading ? (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:80,gap:16}}><div className="pokeball-loader"/></div>
+        ) : items.length === 0 ? (
+          <div className="empty-state"><div className="empty-state-icon">♡</div><div className="empty-state-title">Wishlist is empty</div><div className="empty-state-sub">Find cards in the dex and add them here!</div></div>
+        ) : (
+          <div className="card-grid">
+            {items.map(item=>(
+              <div key={item.id}>
+                <PokeCard card={item.card} onClick={()=>setSelected(item.card)} badge={`P${item.priority||3}`} />
+                <div style={{display:"flex",gap:4,marginTop:6,alignItems:"center"}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:PRIO_COLOR[item.priority||3],flexShrink:0}} />
+                  <span style={{fontSize:10,color:"var(--muted)",fontWeight:700,flex:1}}>Priority {item.priority||3}</span>
+                  <button className="poke-btn btn-red btn-sm btn-icon" onClick={()=>remove(item.id)}>✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {selected && <CardDetailModal card={selected} onClose={()=>setSelected(null)} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════ TRADES PAGE ══════════════════════════════ */
+function TradesPage({ api, toast }){
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+
+  const load = useCallback(async()=>{
+    setLoading(true);
+    try { setItems(await api.get("/trades")); }
+    catch(e){ toast(e.message,"error"); }
+    setLoading(false);
+  },[api,toast]);
+
+  useEffect(()=>{ load(); },[]);
+
+  const remove = async id => {
+    try { await api.del(`/trades/${id}`); toast("Removed from trades","info"); load(); }
+    catch(e){ toast(e.message,"error"); }
+  };
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1 className="pixel" style={{fontSize:14,color:"var(--gold)",marginBottom:4}}>Trade Binder</h1>
+        <div style={{fontSize:12,color:"var(--muted)",fontWeight:700,marginBottom:12}}>{items.length} cards listed for trade</div>
+      </div>
+      <div className="page-body">
+        {loading ? (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:80,gap:16}}><div className="pokeball-loader"/></div>
+        ) : items.length === 0 ? (
+          <div className="empty-state"><div className="empty-state-icon">⇄</div><div className="empty-state-title">No trades listed</div><div className="empty-state-sub">Browse cards and list some for trade!</div></div>
+        ) : (
+          <div style={{background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",overflow:"hidden"}}>
+            <table className="poke-table">
+              <thead><tr><th>Card</th><th>Set</th><th>Qty</th><th>Condition</th><th>Asking</th><th>Market</th><th>Listed</th><th></th></tr></thead>
+              <tbody>
+                {items.map(item=>(
+                  <tr key={item.id} style={{cursor:"pointer"}} onClick={()=>setSelected(item.card)}>
+                    <td>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        {item.card?.images?.small && <img src={item.card.images.small} alt="" style={{width:36,borderRadius:4}} />}
+                        <span style={{fontWeight:800}}>{item.card?.name||item.card_id}</span>
+                      </div>
+                    </td>
+                    <td style={{fontSize:12,color:"var(--muted)"}}>{item.card?.set?.name||"—"}</td>
+                    <td style={{fontWeight:800}}>{item.quantity||1}</td>
+                    <td><span className={`cond-${item.condition}`} style={{fontWeight:800}}>{item.condition||"NM"}</span></td>
+                    <td style={{color:"var(--success)",fontWeight:800}}>{item.asking_price ? fmtPrice(item.asking_price) : "—"}</td>
+                    <td style={{color:"var(--gold)",fontWeight:700}}>{fmtPrice(getMarketPrice(item.card))}</td>
+                    <td style={{fontSize:11,color:"var(--muted)"}}>{fmtDate(item.added_at)}</td>
+                    <td onClick={e=>e.stopPropagation()}>
+                      <button className="poke-btn btn-red btn-sm btn-icon" onClick={()=>remove(item.id)}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {selected && <CardDetailModal card={selected} onClose={()=>setSelected(null)} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════ DECKS PAGE ══════════════════════════════ */
+function DecksPage({ api, toast }){
+  const [decks, setDecks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newFormat, setNewFormat] = useState("standard");
+
+  const load = useCallback(async()=>{
+    setLoading(true);
+    try { setDecks(await api.get("/decks")); }
+    catch(e){ toast(e.message,"error"); }
+    setLoading(false);
+  },[api,toast]);
+
+  useEffect(()=>{ load(); },[]);
+
+  const create = async () => {
+    if(!newName.trim()) return;
+    try {
+      await api.post("/decks",{name:newName,description:newDesc,format:newFormat});
+      toast("Deck created! ✓","success");
+      setCreating(false); setNewName(""); setNewDesc("");
+      load();
+    } catch(e){ toast(e.message,"error"); }
+  };
+
+  const remove = async (id,e) => {
+    e.stopPropagation();
+    try { await api.del(`/decks/${id}`); toast("Deck deleted","info"); load(); }
+    catch(e){ toast(e.message,"error"); }
+  };
+
+  const FORMAT_COLORS = {standard:"#4FC3F7",expanded:"#AB47BC",unlimited:"#FFD700"};
+
+  return (
+    <div>
+      <div className="page-header">
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div>
+            <h1 className="pixel" style={{fontSize:14,color:"var(--gold)",marginBottom:4}}>Deck Builder</h1>
+            <div style={{fontSize:12,color:"var(--muted)",fontWeight:700}}>{decks.length} decks</div>
+          </div>
+          <button className="poke-btn btn-gold" onClick={()=>setCreating(true)}>+ New Deck</button>
+        </div>
+      </div>
+      <div className="page-body">
+        {loading ? (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:80,gap:16}}><div className="pokeball-loader"/></div>
+        ) : decks.length === 0 ? (
+          <div className="empty-state"><div className="empty-state-icon">🃏</div><div className="empty-state-title">No decks yet</div><div className="empty-state-sub">Build your first competitive deck!</div></div>
+        ) : (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:14}}>
+            {decks.map(deck=>(
+              <div key={deck.id} className="deck-card animate-in">
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:10}}>
+                  <div>
+                    <div style={{fontWeight:900,fontSize:14,marginBottom:4}}>{deck.name}</div>
+                    <span className="type-badge" style={{background:`${FORMAT_COLORS[deck.format]||"#aaa"}22`,color:FORMAT_COLORS[deck.format]||"#aaa",border:`1px solid ${FORMAT_COLORS[deck.format]||"#aaa"}44`}}>
+                      {deck.format||"standard"}
+                    </span>
+                  </div>
+                  <button className="poke-btn btn-red btn-sm btn-icon" onClick={e=>remove(deck.id,e)}>✕</button>
+                </div>
+                {deck.description && <div style={{fontSize:12,color:"var(--muted)",marginBottom:10}}>{deck.description}</div>}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:11,color:"var(--muted)"}}>
+                  <span>{(deck.cards||[]).reduce((s,c)=>s+(c.quantity||1),0)} / 60 cards</span>
+                  <span>{fmtDate(deck.updated_at)}</span>
+                </div>
+                <div className="progress-bar" style={{marginTop:8}}>
+                  <div className="progress-fill" style={{width:`${Math.min((deck.cards||[]).reduce((s,c)=>s+(c.quantity||1),0)/60*100,100).toFixed(0)}%`}} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {creating && (
+        <div className="modal-bg" onClick={()=>setCreating(false)}>
+          <div className="modal-box" style={{maxWidth:400}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-header">
+              <span style={{fontWeight:900,fontSize:15}}>New Deck</span>
+              <button className="poke-btn btn-ghost btn-icon" onClick={()=>setCreating(false)} style={{fontSize:18}}>×</button>
+            </div>
+            <div className="modal-body" style={{display:"flex",flexDirection:"column",gap:12}}>
+              <input value={newName} onChange={e=>setNewName(e.target.value)} className="poke-input" placeholder="Deck name *" />
+              <textarea value={newDesc} onChange={e=>setNewDesc(e.target.value)} className="poke-input" placeholder="Description (optional)" rows={2} style={{resize:"vertical"}} />
+              <select value={newFormat} onChange={e=>setNewFormat(e.target.value)} className="poke-input">
+                <option value="standard">Standard</option>
+                <option value="expanded">Expanded</option>
+                <option value="unlimited">Unlimited</option>
+              </select>
+              <button className="poke-btn btn-gold" style={{width:"100%"}} onClick={create}>Create Deck</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════ SETTINGS PAGE ══════════════════════════════ */
+function SettingsPage({ api, user, toast, apiBase, setApiBase }){
+  const [shareInfo, setShareInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [localBase, setLocalBase] = useState(apiBase);
+
+  useEffect(()=>{
+    (async()=>{
+      try { setShareInfo(await api.get("/user/share")); }
+      catch(e){}
+      setLoading(false);
+    })();
+  },[]);
+
+  const toggleShare = async () => {
+    try {
+      const res = await api.post("/user/share",{enabled:!shareInfo?.enabled});
+      setShareInfo(res);
+      toast(res.enabled ? "Public vault enabled! 🔗" : "Vault is now private","info");
+    } catch(e){ toast(e.message,"error"); }
+  };
+
+  const shareUrl = shareInfo?.slug ? `${apiBase}/public/vault/${shareInfo.slug}` : null;
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1 className="pixel" style={{fontSize:14,color:"var(--gold)",marginBottom:4}}>Settings</h1>
+        <div style={{fontSize:12,color:"var(--muted)",fontWeight:700,marginBottom:12}}>Account & preferences</div>
+      </div>
+      <div className="page-body">
+        <div style={{maxWidth:540,display:"flex",flexDirection:"column",gap:16}}>
+
+          {/* Profile */}
+          <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:14,padding:20}}>
+            <div className="section-title">Profile</div>
+            <div style={{display:"flex",alignItems:"center",gap:14}}>
+              <div style={{width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,var(--red),var(--gold))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:900,color:"#000",flexShrink:0}}>
+                {(user?.username||"?")[0].toUpperCase()}
+              </div>
+              <div>
+                <div style={{fontWeight:900,fontSize:16}}>{user?.username}</div>
+                <div style={{fontSize:12,color:"var(--muted)"}}>{user?.email}</div>
+                <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>Member since {fmtDate(user?.created_at)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* API URL */}
+          <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:14,padding:20}}>
+            <div className="section-title">API Server</div>
+            <div style={{display:"flex",gap:10}}>
+              <input value={localBase} onChange={e=>setLocalBase(e.target.value)} className="poke-input" placeholder="http://localhost:8000/api" />
+              <button className="poke-btn btn-gold" onClick={()=>{ setApiBase(localBase); toast("API URL updated","success"); }}>Save</button>
+            </div>
+            <div style={{fontSize:11,color:"var(--muted)",marginTop:8}}>Current: {apiBase}</div>
+          </div>
+
+          {/* Public Vault */}
+          <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:14,padding:20}}>
+            <div className="section-title">Public Vault</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:13}}>Share your collection</div>
+                <div style={{fontSize:12,color:"var(--muted)"}}>Allow others to view your vault via a public link</div>
+              </div>
+              {!loading && (
+                <button
+                  className={`poke-btn ${shareInfo?.enabled?"btn-red":"btn-success"}`}
+                  onClick={toggleShare}
+                >{shareInfo?.enabled ? "Disable" : "Enable"}</button>
+              )}
+            </div>
+            {shareInfo?.enabled && shareUrl && (
+              <div style={{background:"rgba(0,230,118,0.08)",border:"1px solid rgba(0,230,118,0.2)",borderRadius:10,padding:12}}>
+                <div style={{fontSize:11,color:"var(--success)",fontWeight:800,marginBottom:6}}>Your public vault URL:</div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input value={shareUrl} readOnly className="poke-input" style={{fontSize:11}} />
+                  <button className="poke-btn btn-ghost btn-sm" onClick={()=>{navigator.clipboard.writeText(shareUrl);toast("Copied!","success");}}>Copy</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ AUTH PAGE ══════════════════════════════ */
+function AuthPage({ onAuth, apiBase, setApiBase }){
+  const [tab, setTab] = useState("login");
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [localBase, setLocalBase] = useState(apiBase);
+  const [showConfig, setShowConfig] = useState(false);
+
+  const submit = async e => {
+    e.preventDefault();
+    setLoading(true); setError("");
+    try {
+      const url = `${apiBase}/auth/${tab}`;
+      const body = tab === "register" ? {email,username,password} : {email,password};
+      const r = await fetch(url, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const data = await r.json();
+      if(!r.ok) throw new Error(data.detail || "Auth failed");
+      onAuth(data.token, data.user);
+    } catch(e){ setError(e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="auth-bg">
+      <div style={{width:"100%",maxWidth:420}}>
+        {/* Stars */}
+        <div style={{textAlign:"center",marginBottom:8,fontSize:11,color:"var(--muted)"}}>
+          {"✦ ✧ ✦ ".repeat(5)}
+        </div>
+
+        <div className="auth-card">
+          <div className="auth-pokeball" />
+          <h1 className="pixel" style={{fontSize:13,textAlign:"center",color:"var(--gold)",marginBottom:4,lineHeight:1.6}}>PokeVault</h1>
+          <p style={{textAlign:"center",fontSize:12,color:"var(--muted)",marginBottom:24}}>Your Pokémon card collection hub</p>
+
+          <div className="tabs" style={{marginBottom:24}}>
+            <button className={`tab-btn${tab==="login"?" active":""}`} onClick={()=>setTab("login")}>Login</button>
+            <button className={`tab-btn${tab==="register"?" active":""}`} onClick={()=>setTab("register")}>Register</button>
+          </div>
+
+          <form onSubmit={submit} style={{display:"flex",flexDirection:"column",gap:12}}>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" className="poke-input" required />
+            {tab === "register" && (
+              <input value={username} onChange={e=>setUsername(e.target.value)} placeholder="Username" className="poke-input" required />
+            )}
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" className="poke-input" required />
+
+            {error && (
+              <div style={{background:"rgba(255,23,68,0.1)",border:"1px solid rgba(255,23,68,0.3)",borderRadius:8,padding:"10px 14px",fontSize:13,color:"var(--danger)"}}>
+                ✕ {error}
+              </div>
+            )}
+
+            <button type="submit" className="poke-btn btn-gold" style={{width:"100%",padding:"13px 20px",fontSize:14,marginTop:4}} disabled={loading}>
+              {loading ? "…" : tab === "login" ? "⚡ Login" : "✦ Create Account"}
+            </button>
+          </form>
+
+          <button onClick={()=>setShowConfig(!showConfig)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:11,marginTop:16,width:"100%",fontFamily:"Nunito,sans-serif"}}>
+            {showConfig ? "▲ Hide" : "⚙ Configure API URL"}
+          </button>
+          {showConfig && (
+            <div style={{marginTop:10,display:"flex",gap:8}}>
+              <input value={localBase} onChange={e=>setLocalBase(e.target.value)} className="poke-input" placeholder="http://localhost:8000/api" style={{fontSize:12}} />
+              <button className="poke-btn btn-ghost btn-sm" onClick={()=>setApiBase(localBase)}>Set</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════ SIDEBAR ══════════════════════════════ */
+const NAV_ITEMS = [
+  {id:"browse",icon:"🔎",label:"Card Dex"},
+  {id:"collection",icon:"📦",label:"My Vault"},
+  {id:"stats",icon:"📊",label:"Analytics"},
+  {id:"wishlist",icon:"♡",label:"Wishlist"},
+  {id:"trades",icon:"⇄",label:"Trades"},
+  {id:"decks",icon:"🃏",label:"Decks"},
+  {id:"settings",icon:"⚙",label:"Settings"},
+];
+
+function Sidebar({ user, page, setPage, onLogout }){
+  return (
+    <nav className="sidebar">
+      <div className="sidebar-logo">
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(180deg,var(--red) 50%,white 50%)",border:"2px solid #333",flexShrink:0}} />
+          <div>
+            <div className="pixel logo-text" style={{fontSize:8,color:"var(--gold)",lineHeight:1.8}}>PokeVault</div>
+            <div style={{fontSize:9,color:"var(--muted)",fontWeight:700}} className="logo-text">{user?.username}</div>
+          </div>
+        </div>
+      </div>
+      <div className="sidebar-nav">
+        {NAV_ITEMS.map(n=>(
+          <button key={n.id} className={`nav-item${page===n.id?" active":""}`} onClick={()=>setPage(n.id)}>
+            <span className="nav-icon">{n.icon}</span>
+            <span>{n.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="sidebar-footer">
+        <button className="nav-item" onClick={onLogout} style={{width:"100%"}}>
+          <span className="nav-icon">↩</span>
+          <span>Logout</span>
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+/* ══════════════════════════════ MAIN APP ══════════════════════════════ */
+export default function App(){
+  const [apiBase, setApiBase] = useState(() => localStorage.getItem("pv_apibase") || "http://localhost:8000/api");
+  const [token, setToken] = useState(() => localStorage.getItem("pv_token") || null);
+  const [user, setUser] = useState(() => { try{ return JSON.parse(localStorage.getItem("pv_user")||"null"); }catch{ return null; } });
+  const [page, setPage] = useState("browse");
+  const { toasts, toast } = useToast();
+
+  const api = useApi(apiBase, token);
+  api.base = apiBase;
+
+  useEffect(()=>{ localStorage.setItem("pv_apibase", apiBase); }, [apiBase]);
+
+  const handleAuth = (tok, usr) => {
+    setToken(tok); setUser(usr);
+    localStorage.setItem("pv_token", tok);
+    localStorage.setItem("pv_user", JSON.stringify(usr));
+  };
+
+  const handleLogout = () => {
+    setToken(null); setUser(null);
+    localStorage.removeItem("pv_token");
+    localStorage.removeItem("pv_user");
+  };
+
+  if(!token || !user){
+    return (
+      <>
+        <style>{STYLES}</style>
+        <AuthPage onAuth={handleAuth} apiBase={apiBase} setApiBase={v=>{ setApiBase(v); localStorage.setItem("pv_apibase",v); }} />
+        <ToastContainer toasts={toasts} />
+      </>
+    );
+  }
+
+  const pageProps = { api, toast, user, apiBase, setApiBase };
+
+  return (
+    <>
+      <style>{STYLES}</style>
+      <div className="app-shell">
+        <Sidebar user={user} page={page} setPage={setPage} onLogout={handleLogout} />
+        <main className="main-content stars-bg">
+          {page === "browse"     && <BrowsePage     {...pageProps} />}
+          {page === "collection" && <CollectionPage {...pageProps} />}
+          {page === "stats"      && <StatsPage      {...pageProps} />}
+          {page === "wishlist"   && <WishlistPage   {...pageProps} />}
+          {page === "trades"     && <TradesPage     {...pageProps} />}
+          {page === "decks"      && <DecksPage      {...pageProps} />}
+          {page === "settings"   && <SettingsPage   {...pageProps} />}
+        </main>
+      </div>
+      <ToastContainer toasts={toasts} />
+    </>
+  );
+}
